@@ -22,9 +22,9 @@ const globalForDb = globalThis as typeof globalThis & {
   __quickShopDrizzleDb?: ReturnType<typeof drizzle>;
 };
 
-function createPool() {
+function createPool(connectionString?: string) {
   const created = new Pool({
-    connectionString: getDatabaseUrl(),
+    connectionString: connectionString ?? getDatabaseUrl(),
     max: 5,
     connectionTimeoutMillis: 15_000,
     idleTimeoutMillis: 5_000,
@@ -45,7 +45,12 @@ function createPool() {
   return created;
 }
 
-export function getPool(): Pool {
+export function getPool(connectionString?: string): Pool {
+  if (connectionString && connectionString !== getDatabaseUrl()) {
+    // Short-lived one-off database administration work, such as first-run
+    // DDL over a direct Neon connection, must not replace the runtime pool.
+    return createPool(connectionString);
+  }
   if (!globalForDb.__quickShopPostgresqlPool) {
     globalForDb.__quickShopPostgresqlPool = createPool();
   }

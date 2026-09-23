@@ -4,14 +4,18 @@ import { and, desc, eq, gt, isNull, or, sql } from "drizzle-orm";
 import { cookies } from "next/headers";
 import { randomUUID, randomBytes, scrypt, timingSafeEqual } from "node:crypto";
 import { seedProducts } from "@/lib/catalog";
+import { ensureDatabase } from "@/db/bootstrap";
 
 let catalogReady: Promise<void> | undefined;
 export function ensureCatalog() {
   if (!catalogReady) {
-    catalogReady = db.insert(products).values(seedProducts).onConflictDoNothing().then(() => undefined).catch((error) => {
-      catalogReady = undefined;
-      throw error;
-    });
+    catalogReady = ensureDatabase()
+      .then(() => db.insert(products).values(seedProducts).onConflictDoNothing())
+      .then(() => undefined)
+      .catch((error) => {
+        catalogReady = undefined;
+        throw error;
+      });
   }
   return catalogReady;
 }

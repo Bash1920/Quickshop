@@ -4,8 +4,8 @@
 
 - `vercel.json`: Next.js, reproducible dependency installation, Fluid Compute, and a plain `npx next build` so Vercel can publish even before the database is connected.
 - `src/db/index.ts`: a reusable PostgreSQL pool attached to Vercel's connection lifecycle. Application requests use the pooled Neon URL; TLS settings come from that URL. Importing the DB module never throws during builds — the friendly missing-DATABASE_URL error only appears when a query actually runs.
-- `drizzle/`: the checked-in initial migration for all eight QuickShop tables.
-- `scripts/migrate.ts`: an explicit migration command using Drizzle and the direct Neon URL. It refuses to modify existing QuickShop tables that have no migration history.
+- `src/db/bootstrap.ts`: idempotent first-run setup. Once `DATABASE_URL` is available, the first health/store/cart request creates all eight QuickShop tables automatically, using a direct Neon connection derived from the pooled URL when possible.
+- `drizzle/` and `scripts/migrate.ts`: optional checked-in migration tooling for developers who prefer explicit schema management instead of first-run setup.
 - `scripts/check-deployment.ts`: validates connection settings and verifies the required database tables without changing the schema.
 - `.gitignore` and `.vercelignore`: exclude local credentials and build/test artifacts.
 
@@ -19,7 +19,7 @@ Upload the complete source to a GitHub repository, including `public/`, `scripts
 
 In Vercel, choose **Add New → Project** and import the repository. Use the repository root as the Root Directory and select **Node.js 22.x** in the project's build settings. The framework, install command, and build command come from `vercel.json`; do not replace the build command with a static export or `drizzle-kit push`.
 
-If Vercel builds before the database is connected, the build still succeeds and the storefront renders its built-in catalog. Cart, login and orders will return a clear “Database is not connected yet” message until you connect Neon in step 2 and redeploy; do not add dummy credentials to work around it. Use `/api/health` to confirm when the database is ready.
+If Vercel builds before the database is connected, the build still succeeds and the storefront renders its built-in catalog. Cart, login and orders will return a clear “Database is not connected yet” message until you connect Neon in step 2 and redeploy; do not add dummy credentials to work around it. Once `DATABASE_URL` is connected, QuickShop creates its required tables automatically and seeds products on the first health/store/cart request. Use `/api/health` to confirm when the database is ready.
 
 ### 2. Connect Neon
 
@@ -28,34 +28,32 @@ If Vercel builds before the database is connected, the build still succeeds and 
 3. Choose a Neon region close to your Vercel Functions region. Region selection remains in your dashboard so you can match it to your account and customers.
 4. Select **Connect Project**, choose QuickShop, and enable the **Production** environment.
 5. Use the integration's default environment variable names (no custom prefix). Verify that it provides:
-   - `DATABASE_URL`: pooled URL; the endpoint hostname contains `-pooler`.
-   - `DATABASE_URL_UNPOOLED`: direct URL to the **same endpoint and database**.
+   - `DATABASE_URL` (required): pooled URL; the endpoint hostname contains `-pooler`.
+   - `DATABASE_URL_UNPOOLED` (optional but recommended): direct URL to the **same endpoint and database**. If it is absent, first-run setup derives the direct URL from `DATABASE_URL`.
 6. Keep the provider-supplied TLS options, such as `sslmode=require`. Do not expose these values through `NEXT_PUBLIC_` variables.
 
 The Vercel-managed integration can create a Neon account/project and supply the connection variables. If you already have a Neon account, the Neon-managed integration can connect it instead. Use only one of these integration types for the project.
 
 QuickShop has its own account/login system; you do not need to enable Neon Auth for this app.
 
-### 3. Initialize the new database and deploy
+### 3. Deploy and let QuickShop initialize Neon
 
-For a **new, empty Neon database**, add this non-secret environment variable to QuickShop's **Production** environment in Vercel:
+The Vercel build is intentionally plain (`npx next build`) — it does **not** touch the database, so no build-time checks or build commands to configure.
 
-| Name | Value |
-| --- | --- |
-| `QUICKSHOP_RUN_MIGRATIONS` | `1` |
+For a **new, empty Neon database**, you normally do not need to run migrations manually. After you save `DATABASE_URL` and redeploy:
 
-Redeploy from Vercel's Deployments page. The configured build will:
+1. Open `https://your-domain.vercel.app/api/health`, or simply open the website and add a product to the cart.
+2. QuickShop connects using the pooled URL.
+3. It performs idempotent first-run schema creation through the direct URL (`DATABASE_URL_UNPOOLED`, or a direct URL derived by removing `-pooler` from `DATABASE_URL`).
+4. It creates all eight required tables and seeds the 30 sample products without overwriting existing product rows.
 
-1. Check that the Neon URLs are valid, use TLS, and point to the same database.
-2. Apply the checked-in Drizzle migrations through the direct connection.
-3. Verify all eight required application tables through the runtime connection.
-4. Build Next.js and publish the deployment if every check passes.
+Your sandbox accounts, carts, and orders are not copied to Neon.
 
-The first page load adds the 30 sample products without overwriting existing product rows. Your sandbox accounts, carts, and orders are not copied to Neon.
+Optional explicit migration: if you prefer schema management outside the app, run the checked-in migration once from your own machine with the direct Neon URL. This is not required for a normal first deploy.
 
-After the first successful deployment, set `QUICKSHOP_RUN_MIGRATIONS` to `0` and redeploy if you want builds to be read-only. You can leave it at `1` only if reviewed, version-controlled migrations are part of your release process. Drizzle records applied migrations and does not rerun them on normal subsequent deployments. Run schema-changing deployments sequentially, not concurrently.
+`QUICKSHOP_RUN_MIGRATIONS` is only read by local/CI helper scripts. You do **not** need to set it as a Vercel environment variable.
 
-**Existing database warning:** if the database was created using `drizzle-kit push`, it has no migration journal. Keep the flag at `0`; the build can use its existing tables. Before switching to migrations, take a backup and establish a reviewed baseline that matches the actual schema. Never delete customer tables, fake migration history, or use `--force` to bypass the guard.
+**Existing database warning:** the automatic setup only creates missing tables; it does not alter existing tables. If a database was partially created or changed by another version, back it up and resolve the mismatch before deploying.
 
 ### 4. Verify the published URL
 
@@ -73,7 +71,7 @@ Prefer isolated database branches rather than giving every preview the productio
 
 In the Neon integration's deployment configuration, enable **Preview branching** and **Resource must be active before deployment**. The integration injects each preview's connection URLs. Preview branches can inherit production data: use sanitized/test-only data and keep previews access-controlled. Do not expose production customer data to untrusted pull requests.
 
-Set `QUICKSHOP_RUN_MIGRATIONS=1` for **Preview** only when you want reviewed migrations applied to each isolated preview branch. Do not manually pin a production `DATABASE_URL_UNPOOLED` alongside an injected preview `DATABASE_URL`; the build rejects mismatched endpoints.
+Do not set `QUICKSHOP_RUN_MIGRATIONS` in Vercel for Preview either — the Vercel build never runs migrations. If a preview branch needs tables, run `scripts/migrate.ts` once against that branch's direct URL from your machine. Do not manually pin a production `DATABASE_URL_UNPOOLED` alongside an injected preview `DATABASE_URL`.
 
 ## Manual connection / local verification
 

@@ -9,8 +9,8 @@ A responsive e-commerce demo built with Next.js App Router, React, PostgreSQL, a
 **The project is configured for Vercel and Neon. Account linking must be completed in your own Vercel dashboard.** Follow [DEPLOYMENT.md](./DEPLOYMENT.md) for the complete setup and troubleshooting guide.
 
 1. Push the complete project to GitHub and import it into Vercel. Include `src/`, `public/`, `scripts/`, `drizzle/`, `vercel.json`, and the npm lockfile.
-2. Add **Neon Postgres** through Vercel's Storage/Marketplace and connect it to QuickShop using the default `DATABASE_URL` and `DATABASE_URL_UNPOOLED` names.
-3. For a **new empty database**, set `QUICKSHOP_RUN_MIGRATIONS=1` in the Production environment and deploy. For existing tables created with `drizzle-kit push`, leave migrations disabled until a reviewed baseline is established.
+2. Add **Neon Postgres** through Vercel's Storage/Marketplace and connect it to QuickShop. `DATABASE_URL` (pooled) is required; `DATABASE_URL_UNPOOLED` is optional for normal first-run setup because the app derives a direct URL.
+3. Deploy against a **new empty Neon database**. The first health/store/cart request creates all eight tables automatically and seeds products. Explicit `scripts/migrate.ts` usage is optional for developers who prefer migration-managed databases.
 4. Verify the HTTPS URL and `/api/health`. Add your domain in Vercel's **Settings → Domains** if desired.
 
 `vercel.json` selects Next.js, `npm ci --include=dev`, Fluid Compute, and a plain `npx next build` so deployments succeed even before the database is connected. Schema migrations are opt-in via `scripts/migrate.ts`; the safe default is read-only validation. Set Node.js to **22.x** in Vercel's project settings and co-locate its Functions region with your Neon database.
@@ -26,8 +26,8 @@ Copy `.env.example` to `.env.local` for local development, or set the variables 
 | Variable | Purpose |
 | --- | --- |
 | `DATABASE_URL` | Required. Pooled PostgreSQL URL for application requests. Use Neon's complete URL, including TLS options. |
-| `DATABASE_URL_UNPOOLED` | Direct URL to the same endpoint and database. Required when running Neon migrations. |
-| `QUICKSHOP_RUN_MIGRATIONS` | `0` by default. Set to `1` to apply reviewed, checked-in migrations during the configured deployment build. |
+| `DATABASE_URL_UNPOOLED` | Optional direct URL to the same endpoint and database. Recommended for explicit migrations; first-run hosting setup can derive it from a pooled Neon URL. |
+| `QUICKSHOP_RUN_MIGRATIONS` | Used only by local/CI helper scripts. You do not need to set it in Vercel; runtime table setup is automatic and idempotent. |
 
 Existing process environment variables take priority over `.env.local`, then `.env`, for local setup commands. On Vercel, deployment scripts use only the hosting environment; they do not load local dotenv files.
 
