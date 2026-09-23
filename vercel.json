@@ -2,7 +2,7 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
   "installCommand": "npm ci --include=dev",
-  "buildCommand": "node --import tsx scripts/vercel-build.ts",
+  "buildCommand": "npx next build",
   "fluid": true,
   "headers": [
     {

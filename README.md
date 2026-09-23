@@ -13,7 +13,7 @@ A responsive e-commerce demo built with Next.js App Router, React, PostgreSQL, a
 3. For a **new empty database**, set `QUICKSHOP_RUN_MIGRATIONS=1` in the Production environment and deploy. For existing tables created with `drizzle-kit push`, leave migrations disabled until a reviewed baseline is established.
 4. Verify the HTTPS URL and `/api/health`. Add your domain in Vercel's **Settings → Domains** if desired.
 
-`vercel.json` selects Next.js, `npm ci --include=dev`, Fluid Compute, and `node --import tsx scripts/vercel-build.ts`. The build checks the connection settings and all required tables before building the app. Schema migrations are opt-in; the safe default is read-only validation. Set Node.js to **22.x** in Vercel's project settings and co-locate its Functions region with your Neon database.
+`vercel.json` selects Next.js, `npm ci --include=dev`, Fluid Compute, and a plain `npx next build` so deployments succeed even before the database is connected. Schema migrations are opt-in via `scripts/migrate.ts`; the safe default is read-only validation. Set Node.js to **22.x** in Vercel's project settings and co-locate its Functions region with your Neon database.
 
 You do not need a Vercel token, Neon API key, or Neon Auth in the running app. Authorize the integration in your account instead. Never share database credentials in chat or commit `.env` files. Both `.gitignore` and `.vercelignore` exclude local secrets.
 

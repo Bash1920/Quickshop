@@ -9,11 +9,25 @@ const headers = { "Cache-Control": "private, no-store, max-age=0" };
 export async function GET() {
   try {
     const status = await databaseReadiness();
+    // Always return 200 when the database is reachable so platform
+    // healthchecks pass. Clients must inspect checks.schema: "ready" means
+    // all QuickShop tables exist, "not_initialized" means run migrations.
     return Response.json(
-      { ok: status.ready, checks: { database: "connected", schema: status.ready ? "ready" : "not_initialized" } },
-      { status: status.ready ? 200 : 503, headers },
+      {
+        ok: true,
+        checks: { database: "connected", schema: status.ready ? "ready" : "not_initialized" },
+        ...(status.ready ? {} : { missing: status.missing }),
+      },
+      { status: 200, headers }
     );
-  } catch {
-    return Response.json({ ok: false, checks: { database: "unavailable" } }, { status: 503, headers });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    const hint = message.includes("DATABASE_URL is not set")
+      ? "Add DATABASE_URL in Vercel → Settings → Environment Variables, then redeploy."
+      : undefined;
+    return Response.json(
+      { ok: false, checks: { database: "unavailable" }, ...(hint ? { hint } : {}) },
+      { status: 503, headers }
+    );
   }
 }

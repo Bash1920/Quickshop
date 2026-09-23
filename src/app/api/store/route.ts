@@ -8,8 +8,22 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
+function isMissingDatabase(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return message.includes("DATABASE_URL is not set");
+}
+
 function errorResponse(error: unknown) {
   if (error instanceof StoreError) return Response.json({ error: error.message }, { status: error.status });
+  if (isMissingDatabase(error)) {
+    return Response.json(
+      {
+        error:
+          "Database is not connected yet. Add DATABASE_URL in Vercel → Settings → Environment Variables (Production + Preview), then redeploy. See DEPLOYMENT.md.",
+      },
+      { status: 503 }
+    );
+  }
   console.error("Store API:", error);
   return Response.json({ error: "Something went wrong. Please try again in a moment." }, { status: 500 });
 }

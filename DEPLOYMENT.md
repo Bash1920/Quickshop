@@ -2,8 +2,8 @@
 
 ## What is already configured
 
-- `vercel.json`: Next.js, reproducible dependency installation, Fluid Compute, and a deployment build that checks the database before publishing.
-- `src/db/index.ts`: a reusable PostgreSQL pool attached to Vercel's connection lifecycle. Application requests use the pooled Neon URL; TLS settings come from that URL.
+- `vercel.json`: Next.js, reproducible dependency installation, Fluid Compute, and a plain `npx next build` so Vercel can publish even before the database is connected.
+- `src/db/index.ts`: a reusable PostgreSQL pool attached to Vercel's connection lifecycle. Application requests use the pooled Neon URL; TLS settings come from that URL. Importing the DB module never throws during builds — the friendly missing-DATABASE_URL error only appears when a query actually runs.
 - `drizzle/`: the checked-in initial migration for all eight QuickShop tables.
 - `scripts/migrate.ts`: an explicit migration command using Drizzle and the direct Neon URL. It refuses to modify existing QuickShop tables that have no migration history.
 - `scripts/check-deployment.ts`: validates connection settings and verifies the required database tables without changing the schema.
@@ -19,7 +19,7 @@ Upload the complete source to a GitHub repository, including `public/`, `scripts
 
 In Vercel, choose **Add New → Project** and import the repository. Use the repository root as the Root Directory and select **Node.js 22.x** in the project's build settings. The framework, install command, and build command come from `vercel.json`; do not replace the build command with a static export or `drizzle-kit push`.
 
-If Vercel starts a build before the database is connected, it will deliberately stop with a `DATABASE_URL is missing` message. Connect Neon in step 2 and redeploy; do not add dummy credentials to make the build pass.
+If Vercel builds before the database is connected, the build still succeeds and the storefront renders its built-in catalog. Cart, login and orders will return a clear “Database is not connected yet” message until you connect Neon in step 2 and redeploy; do not add dummy credentials to work around it. Use `/api/health` to confirm when the database is ready.
 
 ### 2. Connect Neon
 
@@ -59,7 +59,7 @@ After the first successful deployment, set `QUICKSHOP_RUN_MIGRATIONS` to `0` and
 
 ### 4. Verify the published URL
 
-- `/api/health` must return HTTP 200 with `ok: true`, database `connected`, and schema `ready`.
+- `/api/health` must return HTTP 200 with `ok: true`, database `connected`, and `checks.schema: "ready"`. If it says `"not_initialized"`, the database is reachable but tables are missing — run the migration step.
 - `/api/store` must return the catalog rather than an error. A successful database connection alone is not enough if tables are missing.
 - Test signup/login, wishlist, cart persistence, and a demo checkout over HTTPS.
 - Test in a private browser window. If visitors see Vercel's login page instead of QuickShop, review **Deployment Protection** for the intended public production deployment; preview protection can remain enabled.
@@ -117,7 +117,7 @@ Never run `drizzle-kit push` automatically in production builds. Use backwards-c
 
 | Build or health result | Fix |
 | --- | --- |
-| `DATABASE_URL is missing` | Connect Neon to the correct Vercel project/environment using default variable names, then redeploy. |
+| `/api/health` says DATABASE_URL is not set (or `/api/store` returns 503 “Database is not connected yet”) | Connect Neon to the correct Vercel project/environment using default variable names, then redeploy. The Vercel build itself succeeds without the database so you can iterate. |
 | Local/sandbox database rejected | Replace the localhost URL in Vercel with Neon's pooled cloud URL. |
 | Direct migration URL missing | Connect/add `DATABASE_URL_UNPOOLED` for the same Neon database. |
 | Production/preview endpoint mismatch | Remove conflicting manual variables and let the integration supply both URLs for that environment. |

@@ -3,19 +3,28 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import * as schema from "./schema";
 
-const databaseUrl = process.env.DATABASE_URL?.trim();
+export function isDatabaseConfigured() {
+  return Boolean(process.env.DATABASE_URL?.trim());
+}
 
-if (!databaseUrl) {
-  throw new Error("DATABASE_URL is required. Connect Neon to this Vercel project or configure .env.local. See DEPLOYMENT.md.");
+function getDatabaseUrl() {
+  const databaseUrl = process.env.DATABASE_URL?.trim();
+  if (!databaseUrl) {
+    throw new Error(
+      "DATABASE_URL is not set. The storefront can still build, but cart, login and orders need a database. Add DATABASE_URL (Neon pooled connection string) in Vercel → Settings → Environment Variables, then redeploy."
+    );
+  }
+  return databaseUrl;
 }
 
 const globalForDb = globalThis as typeof globalThis & {
   __quickShopPostgresqlPool?: Pool;
+  __quickShopDrizzleDb?: ReturnType<typeof drizzle>;
 };
 
 function createPool() {
   const created = new Pool({
-    connectionString: databaseUrl,
+    connectionString: getDatabaseUrl(),
     max: 5,
     connectionTimeoutMillis: 15_000,
     idleTimeoutMillis: 5_000,
@@ -36,8 +45,41 @@ function createPool() {
   return created;
 }
 
-// Share a pool within a warm server instance, including during local hot reload.
-export const pool = globalForDb.__quickShopPostgresqlPool ?? createPool();
-globalForDb.__quickShopPostgresqlPool = pool;
+export function getPool(): Pool {
+  if (!globalForDb.__quickShopPostgresqlPool) {
+    globalForDb.__quickShopPostgresqlPool = createPool();
+  }
+  return globalForDb.__quickShopPostgresqlPool;
+}
 
-export const db = drizzle({ client: pool, schema });
+export function getDb() {
+  if (!globalForDb.__quickShopDrizzleDb) {
+    globalForDb.__quickShopDrizzleDb = drizzle({ client: getPool(), schema });
+  }
+  return globalForDb.__quickShopDrizzleDb;
+}
+
+export async function closePool() {
+  const existing = globalForDb.__quickShopPostgresqlPool;
+  globalForDb.__quickShopPostgresqlPool = undefined;
+  globalForDb.__quickShopDrizzleDb = undefined;
+  if (existing) {
+    await existing.end().catch(() => undefined);
+  }
+}
+
+// Lazy proxies so importing "@/db" never throws during `next build`.
+// The friendly missing-DATABASE_URL error is only thrown when a query runs.
+function lazyProxy<T extends object>(resolve: () => T): T {
+  return new Proxy({} as T, {
+    get(_target, prop, receiver) {
+      if (prop === "then") return undefined;
+      const target = resolve();
+      const value = Reflect.get(target as object, prop, receiver);
+      return typeof value === "function" ? (value as (...args: unknown[]) => unknown).bind(target) : value;
+    },
+  });
+}
+
+export const pool = lazyProxy<Pool>(() => getPool());
+export const db = lazyProxy<ReturnType<typeof drizzle>>(() => getDb());
