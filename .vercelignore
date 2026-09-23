@@ -1,0 +1,17 @@
+# Never upload local credentials or generated development state.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+node_modules/
+.next/
+.git/
+artifacts/
+playwright-report/
+test-results/
+coverage/
+*.log
+*.tsbuildinfo
+
+# Keep src/, public/, scripts/, drizzle/, and the lockfile in deployments.
